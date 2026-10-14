@@ -1,7 +1,7 @@
 import { useTourActions, useTourSteps } from 'guided-tour';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { notifications } from '../data';
-import { introTour } from '../tours';
+import { introTour, ordersTour, settingsTour } from '../tours';
 import { Icon } from './Icon';
 
 function Dropdown({ button, label, children }: { button: ReactNode; label: string; children: (close: () => void) => ReactNode }) {
@@ -96,13 +96,13 @@ export function Topbar({ range, onRange }: { range: string; onRange: (r: string)
               {(close) => (
                 <>
                   <div className="menu-title">Guided tours</div>
-                  <button className="menu-item" onClick={() => (close(), start('dashboard-intro'))}>
+                  <button className="menu-item" onClick={() => (close(), start(introTour))}>
                     Replay intro tour
                   </button>
-                  <button className="menu-item" onClick={() => (close(), start('orders-table'))}>
+                  <button className="menu-item" onClick={() => (close(), start(ordersTour))}>
                     Orders table tour
                   </button>
-                  <button className="menu-item" onClick={() => (close(), start('settings'))}>
+                  <button className="menu-item" onClick={() => (close(), start(settingsTour))}>
                     Settings tour
                   </button>
                   <hr />

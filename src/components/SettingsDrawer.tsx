@@ -25,7 +25,7 @@ export function SettingsDrawer({ open, onClose, theme, onTheme }: SettingsDrawer
         <div className="drawer-head">
           <h2>Settings</h2>
           <div>
-            <button className="icon-button" aria-label="Settings tour" onClick={() => start('settings')}>
+            <button className="icon-button" aria-label="Settings tour" onClick={() => start(settingsTour)}>
               <Icon name="help" />
             </button>
             <button className="icon-button" aria-label="Close settings" onClick={onClose}>

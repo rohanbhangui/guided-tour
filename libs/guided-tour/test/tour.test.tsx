@@ -8,6 +8,7 @@ import {
   useTour,
   useTourStep,
   useTourSteps,
+  type TourActions,
   type TourDefinition,
   type TourStorage,
 } from '../src';
@@ -176,15 +177,15 @@ describe('lifecycle & persistence', () => {
     await tick();
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(storage.get('basic:v1')).toMatchObject({ status: 'dismissed' });
-    expect(api.hasSeen('basic')).toBe(true);
+    expect(api.hasSeen(basicTour)).toBe(true);
 
-    act(() => api.reset('basic'));
+    act(() => api.reset(basicTour));
     expect(storage.get('basic:v1')).toBeNull();
-    expect(api.hasSeen('basic')).toBe(false);
+    expect(api.hasSeen(basicTour)).toBe(false);
     await tick();
     expect(screen.queryByRole('dialog')).toBeNull(); // reset alone doesn't start it
 
-    await act(() => api.reset('basic', { restart: true }));
+    await act(() => api.reset(basicTour, { restart: true }));
     await tick();
     expect(screen.getByRole('dialog')).toBeTruthy();
     expect(api.isActive).toBe(true);
@@ -422,6 +423,25 @@ describe('types', () => {
     const useIt = () => useTourStep(basicTour, 'gamma');
     expect(Typed).toBeTypeOf('function');
     expect(useIt).toBeTypeOf('function');
+  });
+
+  it('actions take tour objects, and start({ step }) is checked against the tour', () => {
+    const typed = (api: TourActions) => {
+      void api.start(basicTour, { step: 'alpha' });
+      void api.start(basicTour, { step: 1 });
+      api.reset(basicTour, { restart: true });
+      api.reset();
+      api.hasSeen(basicTour);
+      // @ts-expect-error — tours are passed as objects, not id strings
+      void api.start('basic');
+      // @ts-expect-error — not a step of this tour
+      void api.start(basicTour, { step: 'alpah' });
+      // @ts-expect-error — tours are passed as objects, not id strings
+      api.reset('basic');
+      // @ts-expect-error — tours are passed as objects, not id strings
+      api.hasSeen('basic');
+    };
+    expect(typed).toBeTypeOf('function');
   });
 });
 

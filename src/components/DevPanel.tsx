@@ -1,6 +1,6 @@
 import { useTour } from 'guided-tour';
 import { useEffect, useState } from 'react';
-import { tours } from '../tours';
+import { introTour, tours } from '../tours';
 
 type EscMode = 'hold' | 'tap';
 
@@ -70,10 +70,10 @@ export function DevPanel({ escMode, onEscMode, look, onLook }: DevPanelProps) {
             <tr key={t.id}>
               <td className="mono">{t.id}</td>
               <td>
-                <button onClick={() => tour.start(t.id)}>start</button>
+                <button onClick={() => tour.start(t)}>start</button>
                 <button
                   onClick={() => {
-                    tour.reset(t.id);
+                    tour.reset(t);
                     refresh();
                   }}
                 >
@@ -89,7 +89,7 @@ export function DevPanel({ escMode, onEscMode, look, onLook }: DevPanelProps) {
           stop
         </button>
         <button onClick={() => (tour.reset(), refresh())}>reset all</button>
-        <button onClick={() => (tour.reset('dashboard-intro'), location.reload())}>reset intro + reload</button>
+        <button onClick={() => (tour.reset(introTour), location.reload())}>reset intro + reload</button>
       </div>
       <div className="devpanel-row">
         <span>Esc:</span>

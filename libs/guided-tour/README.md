@@ -30,8 +30,10 @@ const { Step } = useTourSteps(introTour);
   <KpiCards />
 </Step>
 
-// anywhere
+// anywhere: pass the tour object, never its id string, so typos don't compile
 const { start, stop, reset } = useTourActions();
+start(introTour);
+reset(introTour);
 ```
 
 ## Scripts

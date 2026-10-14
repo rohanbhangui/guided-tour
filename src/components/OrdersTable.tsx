@@ -101,7 +101,7 @@ export function OrdersTable() {
                 />
               </label>
             </Step>
-            <button className="icon-button" aria-label="Orders table tour" onClick={() => start('orders-table')}>
+            <button className="icon-button" aria-label="Orders table tour" onClick={() => start(ordersTour)}>
               <Icon name="help" />
             </button>
           </div>

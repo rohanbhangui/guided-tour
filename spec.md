@@ -325,28 +325,30 @@ import 'guided-tour/styles.css';
 ```ts
 const tour = useTour();
 
-tour.start('dashboard-intro');                 // start (even if already seen)
-tour.start('dashboard-intro', { step: 2 });    // start at a step
+tour.start(dashboardTour);                     // start (even if already seen)
+tour.start(dashboardTour, { step: 2 });        // start at a step (index, or a step id of that tour)
 tour.next();
 tour.prev();
 tour.goTo(4);                                  // index or step id
 tour.stop();                                   // end the active tour now, mark as dismissed
-tour.reset('dashboard-intro');                 // clear its storage entry so it shows again
+tour.reset(dashboardTour);                     // clear its storage entry so it shows again
 tour.reset();                                  // clear all registered tours
-tour.reset('dashboard-intro', { restart: true }); // clear + start immediately
+tour.reset(dashboardTour, { restart: true });  // clear + start immediately
 
 tour.activeTourId;    // string | null
 tour.stepIndex;       // number
 tour.totalSteps;      // number
 tour.isActive;        // boolean
-tour.hasSeen('dashboard-intro'); // boolean — read from storage
+tour.hasSeen(dashboardTour); // boolean — read from storage
 ```
+
+Tours are always passed as their `defineTour` object, never as an id string, so a wrong tour or a wrong `step` id is a compile error. The id string appears once, inside `defineTour`.
 
 **`stop` vs `reset`**
 | | Ends active tour | Writes storage | Will auto-show again |
 |---|---|---|---|
 | `stop()` | yes | `dismissed` | no |
-| `reset(id)` | yes, if it's the active one | removes entry | yes (next mount / `restart: true`) |
+| `reset(tour)` | yes, if it's the active one | removes entry | yes (next mount / `restart: true`) |
 
 `stop({ persist: false })` ends the tour without writing storage (it will auto-show again next load).
 

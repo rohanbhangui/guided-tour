@@ -5,6 +5,7 @@ import type {
   KeyboardOptions,
   StepContext,
   StepOptions,
+  StepIdOf,
   StepTarget,
   TourDefinition,
   TourLifecycleContext,
@@ -37,9 +38,9 @@ export interface ControllerConfig {
   disabled?: boolean;
 }
 
-export interface StartOptions {
+export interface StartOptions<Id extends string = string> {
   /** Step index or id to start at. */
-  step?: number | string;
+  step?: number | Id;
 }
 
 export interface StopOptions {
@@ -52,14 +53,17 @@ export interface ResetOptions {
   restart?: boolean;
 }
 
+/** Tours are passed as their definition objects, never id strings, so typos fail to compile. */
 export interface TourActions {
-  start(tourId: string, options?: StartOptions): Promise<void>;
+  /** Start a tour (even if already seen). `step` is checked against the tour's step ids. */
+  start<T extends TourDefinition<any>>(tour: T, options?: StartOptions<StepIdOf<T>>): Promise<void>; // eslint-disable-line @typescript-eslint/no-explicit-any
   stop(options?: StopOptions): void;
-  reset(tourId?: string, options?: ResetOptions): void;
+  /** Clear a tour's record so it shows again. No tour: clear all registered tours. */
+  reset(tour?: TourDefinition<any>, options?: ResetOptions): void; // eslint-disable-line @typescript-eslint/no-explicit-any
   next(): void;
   prev(): void;
   goTo(step: number | string): void;
-  hasSeen(tourId: string): boolean;
+  hasSeen(tour: TourDefinition<any>): boolean; // eslint-disable-line @typescript-eslint/no-explicit-any
 }
 
 const OPTION_KEYS = [
@@ -119,13 +123,13 @@ export class TourController {
   constructor(config: ControllerConfig) {
     this.config = config;
     this.actions = {
-      start: (id, o) => this.start(id, o),
+      start: (tour, o) => this.start(tour.id, o),
       stop: (o) => this.stop(o),
-      reset: (id, o) => this.reset(id, o),
+      reset: (tour, o) => this.reset(tour?.id, o),
       next: () => this.next(),
       prev: () => this.prev(),
       goTo: (s) => this.goTo(s),
-      hasSeen: (id) => this.hasSeen(id),
+      hasSeen: (tour) => this.hasSeen(tour.id),
     };
   }
 
@@ -216,7 +220,10 @@ export class TourController {
     if (this.activeTour && ids.includes(this.activeTour.id)) this.finish('dismissed', false);
     for (const id of ids) {
       const tour = this.tours.get(id);
-      if (!tour) continue;
+      if (!tour) {
+        warn(`reset(): no tour registered with id "${id}".`);
+        continue;
+      }
       const key = storageKey(tour);
       this.records.set(key, null);
       void this.config.storage.remove(key);
