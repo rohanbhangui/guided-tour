@@ -28,27 +28,24 @@ The repo also ships a **sample dashboard app** that we use to develop, demo and 
 
 ## 3. Repo layout
 
-Monorepo using Yarn (v1) workspaces. The sample app uses Vite (React + TS) and imports the library's source directly through an alias, so edits show up live without a build step. **TypeScript everywhere**: both the library and the sample app, so the library is easy to lift into another codebase later.
+The repo is laid out like the project the library will end up in: the library sits in `libs/guided-tour/`, and the repo root is a small Vite (React + TS) demo app that consumes it. Yarn (v1) workspaces (`libs/*`) install the library's dependencies. The demo imports the library's source directly through an alias, so edits show up live without a build step. **TypeScript everywhere**.
 
-- `strict: true` in a shared `tsconfig.base.json`.
+- `strict: true`. The library has its own standalone `tsconfig.json`, `package.json` and build/test config, so `libs/guided-tour` can be copied into another repo without edits.
 - All public types are exported (`TourDefinition`, `TourStep`, `StepTarget`, `TourStorage`, `KeyboardOptions`, etc.) so consumers get full autocomplete.
-- The library has no app-specific imports. Everything it needs comes in through props and config.
+- The library has no app-specific imports and nothing outside its own folder. Everything it needs comes in through props and config.
 
 ```
 guided-tour/
-├── packages/
-│   └── guided-tour/          # the library (published package)
+├── libs/
+│   └── guided-tour/          # the library: copy this folder to move it
 │       ├── src/
-│       │   ├── index.ts
-│       │   ├── TourProvider.tsx
-│       │   ├── useTour.ts
-│       │   ├── defineTour.ts
-│       │   ├── storage.ts
-│       │   ├── components/   # Overlay, Spotlight, Popover, Dots, Controls
-│       │   └── styles.css
-│       └── package.json
-├── examples/
-│   └── dashboard/            # sample React app (Vite)
+│       ├── test/
+│       ├── README.md
+│       ├── package.json
+│       └── tsconfig.json
+├── src/                      # demo app (Acme Analytics dashboard)
+├── index.html
+├── vite.config.ts
 ├── spec.md
 └── package.json
 ```
@@ -471,7 +468,7 @@ The tour must never get in the way of the host app. When no tour is running, it 
 
 ## 11. Sample app — "Acme Analytics" dashboard
 
-Vite + React + TS in `examples/dashboard`. Fake data, no backend. Deliberately busy so tours have real things to point at and real edge cases to handle.
+Vite + React + TS at the repo root (`src/`, `index.html`). Fake data, no backend. Deliberately busy so tours have real things to point at and real edge cases to handle.
 
 **Layout**
 - **Sidebar**: logo, nav (Overview, Orders, Customers, Settings), collapse toggle.
