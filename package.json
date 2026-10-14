@@ -1,0 +1,14 @@
+{
+  "name": "guided-tour-monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
+  "scripts": {
+    "dev": "yarn workspace dashboard-example dev",
+    "build": "yarn workspace guided-tour build",
+    "test": "yarn workspace guided-tour test",
+    "typecheck": "yarn workspace guided-tour typecheck && yarn workspace dashboard-example typecheck"
+  }
+}

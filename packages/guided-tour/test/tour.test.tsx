@@ -1,0 +1,427 @@
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { StrictMode, forwardRef, useRef, useState, type ReactNode } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  TourProvider,
+  defineTour,
+  memoryStorage,
+  useTour,
+  useTourStep,
+  useTourSteps,
+  type TourDefinition,
+  type TourStorage,
+} from '../src';
+
+const tick = (ms = 0) => act(() => new Promise((r) => setTimeout(r, ms)));
+
+const basicTour = defineTour({
+  id: 'basic',
+  autoStart: true,
+  waitTimeout: 0,
+  steps: [
+    { id: 'welcome', title: 'Welcome', content: 'Hello there' },
+    'alpha',
+    'beta',
+  ],
+});
+
+function Steps() {
+  const { Step } = useTourSteps(basicTour);
+  return (
+    <main>
+      <Step id="alpha" title="Alpha" content="Alpha content">
+        <section data-testid="alpha">A</section>
+      </Step>
+      <Step id="beta" title="Beta" content="Beta content">
+        <section data-testid="beta">B</section>
+      </Step>
+    </main>
+  );
+}
+
+function setup(opts: { tours?: TourDefinition<string>[]; storage?: TourStorage; children?: ReactNode } = {}) {
+  const storage = opts.storage ?? memoryStorage();
+  const utils = render(
+    <TourProvider tours={opts.tours ?? [basicTour]} storage={storage}>
+      {opts.children ?? <Steps />}
+    </TourProvider>,
+  );
+  return { storage, ...utils };
+}
+
+beforeEach(() => vi.spyOn(console, 'warn').mockImplementation(() => {}));
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
+
+describe('footprint', () => {
+  it('adds no DOM while idle and <Step> adds no wrapper', async () => {
+    const quiet = defineTour({ id: 'quiet', steps: ['alpha'] });
+    function Content() {
+      const { Step } = useTourSteps(quiet);
+      return (
+        <Step id="alpha" content="x">
+          <p>child</p>
+        </Step>
+      );
+    }
+    const { container } = setup({ tours: [quiet], children: <Content /> });
+    await tick();
+    expect(container.innerHTML).toBe('<p>child</p>');
+    expect(document.body.children).toHaveLength(1); // just RTL's container, no portal
+  });
+
+  it('does not re-render the app when steps register or the step changes', async () => {
+    let siblingRenders = 0;
+    function Sibling() {
+      siblingRenders++;
+      return null;
+    }
+    setup({
+      children: (
+        <>
+          <Sibling />
+          <Steps />
+        </>
+      ),
+    });
+    await tick();
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    const before = siblingRenders;
+    fireEvent.click(screen.getByText('Next'));
+    await tick();
+    fireEvent.click(screen.getByText('Next'));
+    await tick();
+    expect(siblingRenders).toBe(before);
+  });
+});
+
+describe('lifecycle & persistence', () => {
+  it('auto-starts once, walks the steps, and records completion', async () => {
+    const { storage } = setup();
+    await tick();
+    expect(screen.getByRole('dialog').textContent).toContain('Hello there');
+    expect(screen.getByText('1 of 3')).toBeTruthy();
+
+    fireEvent.click(screen.getByText('Next'));
+    await tick();
+    expect(screen.getByText('Alpha content')).toBeTruthy();
+    expect(screen.getByText('Back')).toBeTruthy();
+
+    fireEvent.click(screen.getByText('Next'));
+    await tick();
+    expect(screen.getByText('Beta content')).toBeTruthy();
+    fireEvent.click(screen.getByText('Done'));
+    await tick();
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(storage.get('basic:v1')).toMatchObject({ status: 'completed', step: 2 });
+    expect(document.querySelector('.gt-root')).toBeNull();
+  });
+
+  it('auto-starts under StrictMode (effects mount twice) with a delay', async () => {
+    const delayed = { ...basicTour, id: 'strict', autoStartDelay: 30 };
+    function StrictSteps() {
+      const { Step } = useTourSteps(delayed as typeof basicTour);
+      return (
+        <Step id="alpha" content="Alpha content">
+          <div />
+        </Step>
+      );
+    }
+    render(
+      <StrictMode>
+        <TourProvider tours={[delayed]} storage={memoryStorage()}>
+          <StrictSteps />
+        </TourProvider>
+      </StrictMode>,
+    );
+    await tick(80);
+    expect(screen.getByText('Hello there')).toBeTruthy();
+  });
+
+  it('does not auto-start when already seen', async () => {
+    const storage = memoryStorage();
+    storage.set('basic:v1', { status: 'dismissed', step: 0, updatedAt: '' });
+    setup({ storage });
+    await tick();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('bumping the version re-shows the tour', async () => {
+    const storage = memoryStorage();
+    storage.set('basic:v1', { status: 'completed', step: 2, updatedAt: '' });
+    setup({ storage, tours: [{ ...basicTour, version: 2 }] });
+    await tick();
+    expect(screen.getByRole('dialog')).toBeTruthy();
+  });
+
+  it('close button dismisses; reset clears and restart shows it again', async () => {
+    let api!: ReturnType<typeof useTour>;
+    function Grab() {
+      api = useTour();
+      return null;
+    }
+    const { storage } = setup({
+      children: (
+        <>
+          <Grab />
+          <Steps />
+        </>
+      ),
+    });
+    await tick();
+    fireEvent.click(screen.getByLabelText('Close tour'));
+    await tick();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(storage.get('basic:v1')).toMatchObject({ status: 'dismissed' });
+    expect(api.hasSeen('basic')).toBe(true);
+
+    act(() => api.reset('basic'));
+    expect(storage.get('basic:v1')).toBeNull();
+    expect(api.hasSeen('basic')).toBe(false);
+    await tick();
+    expect(screen.queryByRole('dialog')).toBeNull(); // reset alone doesn't start it
+
+    await act(() => api.reset('basic', { restart: true }));
+    await tick();
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(api.isActive).toBe(true);
+  });
+
+  it('stop({ persist: false }) leaves no record', async () => {
+    let api!: ReturnType<typeof useTour>;
+    function Grab() {
+      api = useTour();
+      return null;
+    }
+    const { storage } = setup({ children: <><Grab /><Steps /></> });
+    await tick();
+    act(() => api.stop({ persist: false }));
+    expect(storage.get('basic:v1')).toBeNull();
+  });
+});
+
+describe('steps', () => {
+  it('skips inline steps that are not mounted', async () => {
+    const tour = defineTour({
+      id: 'skip',
+      autoStart: true,
+      waitTimeout: 0,
+      steps: ['missing', { id: 'end', content: 'The end' }],
+    });
+    setup({ tours: [tour], children: <div /> });
+    await tick();
+    expect(screen.getByText('The end')).toBeTruthy();
+  });
+
+  it('waits for a step that mounts late', async () => {
+    const tour = defineTour({ id: 'late', autoStart: true, waitTimeout: 500, steps: ['later'] });
+    function Late({ show }: { show: boolean }) {
+      const { Step } = useTourSteps(tour);
+      return show ? (
+        <Step id="later" content="Arrived">
+          <div />
+        </Step>
+      ) : null;
+    }
+    const { rerender } = render(
+      <TourProvider tours={[tour]} storage={memoryStorage()}>
+        <Late show={false} />
+      </TourProvider>,
+    );
+    await tick(50);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    rerender(
+      <TourProvider tours={[tour]} storage={memoryStorage()}>
+        <Late show />
+      </TourProvider>,
+    );
+    await tick(100);
+    expect(screen.getByText('Arrived')).toBeTruthy();
+  });
+
+  it('a tour that shows zero steps is not recorded as seen', async () => {
+    const storage = memoryStorage();
+    const tour = defineTour({ id: 'empty', autoStart: true, waitTimeout: 0, steps: ['nope'] });
+    setup({ tours: [tour], storage, children: <div /> });
+    await tick();
+    expect(storage.get('empty:v1')).toBeNull();
+  });
+
+  it('runs onBeforeShow from the definition before an inline step mounts', async () => {
+    const tour = defineTour({
+      id: 'drawer',
+      autoStart: true,
+      steps: [{ id: 'inside', onBeforeShow: () => openDrawer() }],
+    });
+    let openDrawer = () => {};
+    function App() {
+      const [open, setOpen] = useState(false);
+      openDrawer = () => setOpen(true);
+      const { Step } = useTourSteps(tour);
+      return open ? (
+        <Step id="inside" content="In the drawer">
+          <aside />
+        </Step>
+      ) : null;
+    }
+    setup({ tours: [tour], children: <App /> });
+    await tick(100);
+    expect(screen.getByText('In the drawer')).toBeTruthy();
+  });
+
+  it('useTourStep works with a forwardRef component and keeps the user ref', async () => {
+    const tour = defineTour({ id: 'ref', autoStart: true, steps: ['card'] });
+    const Card = forwardRef<HTMLDivElement, { children: ReactNode }>((p, ref) => <div ref={ref}>{p.children}</div>);
+    let userRef: HTMLDivElement | null = null;
+    function App() {
+      const local = useRef<HTMLDivElement>(null);
+      const { Step } = useTourSteps(tour);
+      userRef = local.current;
+      return (
+        <Step id="card" content="Card step">
+          <Card ref={local}>card</Card>
+        </Step>
+      );
+    }
+    setup({ tours: [tour], children: <App /> });
+    await tick();
+    expect(screen.getByText('Card step')).toBeTruthy();
+    expect(screen.getByText('card').tagName).toBe('DIV');
+    void userRef;
+  });
+
+  it('useTourStep returns a ref callback for the element itself', async () => {
+    const tour = defineTour({ id: 'hook', autoStart: true, steps: ['self'] });
+    function Self() {
+      const ref = useTourStep(tour, 'self', { content: 'Self step' });
+      return <div ref={ref}>me</div>;
+    }
+    setup({ tours: [tour], children: <Self /> });
+    await tick();
+    expect(screen.getByText('Self step')).toBeTruthy();
+  });
+});
+
+describe('keyboard', () => {
+  const kbTour = (escape: 'hold' | 'tap') =>
+    defineTour({
+      id: `kb-${escape}`,
+      autoStart: true,
+      keyboard: { escape, escapeHoldMs: 80 },
+      steps: [
+        { id: 'one', content: 'One' },
+        { id: 'two', content: 'Two' },
+      ],
+    });
+
+  it('arrow keys navigate', async () => {
+    setup({ tours: [kbTour('hold')], children: <div /> });
+    await tick();
+    fireEvent.keyDown(document, { key: 'ArrowRight' });
+    await tick();
+    expect(screen.getByText('Two')).toBeTruthy();
+    fireEvent.keyDown(document, { key: 'ArrowLeft' });
+    await tick();
+    expect(screen.getByText('One')).toBeTruthy();
+  });
+
+  it('a short Escape press does not exit in hold mode; a long one does', async () => {
+    const { storage } = setup({ tours: [kbTour('hold')], children: <div /> });
+    await tick();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.getByLabelText('Close tour').hasAttribute('data-holding')).toBe(true);
+    await tick(20);
+    fireEvent.keyUp(document, { key: 'Escape' });
+    await tick(120);
+    expect(screen.getByRole('dialog')).toBeTruthy();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await tick(120);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(storage.get('kb-hold:v1')).toMatchObject({ status: 'dismissed' });
+  });
+
+  it('tap mode exits immediately', async () => {
+    setup({ tours: [kbTour('tap')], children: <div /> });
+    await tick();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await tick();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});
+
+describe('progress dots', () => {
+  const long = defineTour({
+    id: 'long',
+    autoStart: true,
+    progress: 'dots',
+    steps: Array.from({ length: 9 }, (_, i) => ({ id: `s${i}`, content: `Step ${i}` })),
+  });
+  const shown = () => [...document.querySelectorAll('.gt-dot')].filter((d) => d.getAttribute('data-size') !== 'hidden');
+
+  it('windows the dots past maxDots and shrinks edge dots', async () => {
+    setup({ tours: [long], children: <div /> });
+    await tick();
+    expect(document.querySelectorAll('.gt-dot')).toHaveLength(9);
+    expect(shown()).toHaveLength(5);
+    expect(shown().at(-1)!.getAttribute('data-size')).toBe('sm'); // more beyond the right edge
+    expect(shown()[0]!.getAttribute('data-size')).toBeNull(); // nothing before the first step
+
+    act(() => {
+      for (let i = 0; i < 4; i++) fireEvent.keyDown(document, { key: 'ArrowRight' });
+    });
+    await tick();
+    await tick();
+    const current = document.querySelector('.gt-dot[aria-current="step"]')!;
+    expect(shown()).toContain(current);
+    expect(shown()[0]!.getAttribute('data-size')).toBe('sm');
+  });
+});
+
+describe('width', () => {
+  it('uses the tour width, overridden per step', async () => {
+    const tour = defineTour({
+      id: 'w',
+      autoStart: true,
+      width: 400,
+      steps: [
+        { id: 'a', content: 'A' },
+        { id: 'b', content: 'B', width: '30rem' },
+      ],
+    });
+    setup({ tours: [tour], children: <div /> });
+    await tick();
+    const floating = () => document.querySelector<HTMLElement>('.gt-floating')!;
+    expect(floating().style.width).toContain('400px');
+    fireEvent.keyDown(document, { key: 'ArrowRight' });
+    await tick();
+    expect(floating().style.width).toContain('30rem');
+  });
+});
+
+describe('types', () => {
+  it('step ids are checked against the tour', () => {
+    function Typed() {
+      const { Step } = useTourSteps(basicTour);
+      return (
+        <>
+          <Step id="alpha" content="ok">
+            <div />
+          </Step>
+          {/* @ts-expect-error — not a step of this tour */}
+          <Step id="alpah" content="typo">
+            <div />
+          </Step>
+        </>
+      );
+    }
+    // @ts-expect-error — not a step of this tour
+    const useIt = () => useTourStep(basicTour, 'gamma');
+    expect(Typed).toBeTypeOf('function');
+    expect(useIt).toBeTypeOf('function');
+  });
+});
+

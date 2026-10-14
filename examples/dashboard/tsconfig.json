@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["vite/client"],
+    "paths": {
+      "guided-tour": ["../../packages/guided-tour/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}
