@@ -4,7 +4,7 @@
 
 ## 1. Summary
 
-A React library for **single-page guided tours**: a sequence of popovers that point at parts of the current screen ("this is your revenue chart", "filter the table here") with a spotlight on the target element. Steps are declared inline in the JSX next to the element they point at (`<Step id="revenue-chart" title="…" content="…"><RevenueChart /></Step>`). A small tour definition sets their order. Tours are registered with a drop-in `<TourProvider>` and controlled through a `useTour()` hook.
+A React library for **single-page guided tours**: a sequence of popovers that point at parts of the current screen ("this is your revenue chart", "filter the table here") with a spotlight on the target element. Steps are declared inline in the JSX next to the element they point at (`<Step id="revenue-chart" title="…" content="…"><RevenueChart /></Step>`). A small tour definition sets their order. Tours are registered with a drop-in `<TourProvider>` and controlled through `useTourActions()` / `useTour()`.
 
 Whether a user has already seen a tour is stored in `localStorage`, so each tour shows **once** per browser unless it is reset.
 
@@ -31,7 +31,7 @@ The repo also ships a **sample dashboard app** that we use to develop, demo and 
 The repo is laid out like the project the library will end up in: the library sits in `libs/guided-tour/`, and the repo root is a small Vite (React + TS) demo app that consumes it. Yarn (v1) workspaces (`libs/*`) install the library's dependencies. The demo imports the library's source directly through an alias, so edits show up live without a build step. **TypeScript everywhere**.
 
 - `strict: true`. The library has its own standalone `tsconfig.json`, `package.json` and build/test config, so `libs/guided-tour` can be copied into another repo without edits.
-- All public types are exported (`TourDefinition`, `TourStep`, `StepTarget`, `TourStorage`, `KeyboardOptions`, etc.) so consumers get full autocomplete.
+- All public types are exported (`TourDefinition`, `ConfigStep`, `StepOptions`, `StepTarget`, `TourStorage`, `KeyboardOptions`, `TourActions`, etc.) so consumers get full autocomplete.
 - The library has no app-specific imports and nothing outside its own folder. Everything it needs comes in through props and config.
 
 ```
@@ -92,7 +92,7 @@ export const dashboardTour = defineTour({
 });
 ```
 
-Typed step ids: `defineTour` infers the id union from `steps`, so `useTourStep(dashboardTour, 'revnue-chart')` (typo) is a compile error.
+Typed step ids: `defineTour` infers the id union from `steps`, so `<Step id="revnue-chart">` (typo) is a compile error. The same goes for `start(tour, { step })` (§4.9).
 
 ### 4.3 Inline steps
 
@@ -158,7 +158,7 @@ function RevenueChart() {
 
 **How the ref gets attached.** By default `<TourStep>` merges its ref into its only child (Radix `Slot`-style), so no extra DOM is added. That needs the child to accept a ref: a DOM element, a `forwardRef` component, or any component on React 19 (where `ref` is a regular prop). If the child can't take a ref, pass `wrapper="div"` (or `"span"`) and a wrapper element is rendered and measured instead. In development, if no element ever reaches the ref, a warning tells you to use `wrapper`.
 
-`tour` can be the tour object (gives typed ids) or the tour id string.
+`tour` can be the tour object (gives typed ids) or the tour id string. Prefer the object: the string form isn't type-checked.
 
 **One element, several tours.** Nest them: `<Step id="kpis" …><OtherTourStep id="metrics" …><KpiRow /></OtherTourStep></Step>`.
 
@@ -183,14 +183,18 @@ Every step has the same options whether it's declared inline or in config. The o
 ```ts
 type StepTarget =
   | string                         // CSS selector — config steps only
-  | React.RefObject<HTMLElement>
+  | React.RefObject<HTMLElement | null>
   | (() => HTMLElement | null);    // escape hatch
 
-interface TourStep {
+// `<Step>` props are `id` + StepOptions; its target is always the element it wraps.
+interface ConfigStep extends StepOptions {
   id: string;                      // required — used for ordering, goTo('id'), analytics
   target?: StepTarget;             // config steps only; omitted → centered step, no spotlight
+}
+
+interface StepOptions {
   title?: React.ReactNode;
-  content: React.ReactNode;        // string or any React node
+  content?: React.ReactNode;       // string or any React node; omit to merge with the inline step (§4.4)
   placement?: Placement;           // preset string or object, see §4.6 (default 'auto')
   spotlight?: boolean;             // cut a hole around the target; default true when target exists
   overlay?: boolean;               // per-step override of the tour's overlay
@@ -274,7 +278,7 @@ placement: { bottom: 24, right: 24, relativeTo: 'viewport' }      // pinned bott
 interface TourDefinition {
   id: string;
   version?: number;                  // default 1
-  steps: Array<string | TourStep>;  // string = inline step id, object = config step
+  steps: Array<string | ConfigStep>; // string = inline step id, object = config step
   autoStart?: boolean;               // default false
   autoStartDelay?: number;           // ms, default 0 — lets the page settle
   // UI options (all overridable at provider level too)
@@ -317,10 +321,13 @@ import 'guided-tour/styles.css';
 
 - Registers tours; warns in dev on **duplicate `id`s** (keys must be unique).
 - Handles `autoStart` tours on mount: starts the first registered auto-start tour whose storage entry is absent. Only **one tour runs at a time**; additional auto-starts queue.
-- Renders the overlay/popover into a portal on `document.body`.
+- Renders the overlay/popover into a portal on `document.body` (or `portalContainer`).
 - SSR-safe: no `window`/`localStorage` access during render.
+- **Required.** Every hook (`useTour`, `useTourActions`, `useActiveStep`, `useTourSteps`) and every `<Step>` must be rendered inside a `<TourProvider>`. Used outside one, it throws on first render, in dev and production: `[guided-tour] useTourActions must be used inside <TourProvider>.` (the message names the hook). This can't be a TypeScript error: whether a provider sits above a component depends on where it's rendered at runtime, not on its types.
 
-### 4.9 `useTour()` hook
+### 4.9 `useTourActions()` / `useTour()` hooks
+
+`useTourActions()` returns only the actions below and never re-renders. `useTour()` returns the same actions plus the state fields, and re-renders when the tour starts, stops or changes step.
 
 ```ts
 const tour = useTour();
@@ -354,8 +361,8 @@ Tours are always passed as their `defineTour` object, never as an id string, so 
 
 ### 4.10 Convenience helpers
 
-- `<TourTrigger tour="orders-table">Take the tour</TourTrigger>` — button that calls `start`.
 - `mergeRefs(...refs)`: combines a tour ref with your own refs.
+- *Planned:* `<TourTrigger tour={ordersTour}>Take the tour</TourTrigger>`, a button that calls `start`.
 
 ## 5. Persistence
 
@@ -415,11 +422,11 @@ Rationale for hold-Esc default: a single Esc tap is easy to hit accidentally (e.
 
 **Customization layers** (from lightest to heaviest):
 1. **CSS variables** — `--gt-accent`, `--gt-radius`, `--gt-overlay-color`, `--gt-z-index`, `--gt-popover-width`, etc. Light/dark aware.
-2. **`classNames` prop** — per-part class names (`popover`, `title`, `content`, `footer`, `dots`, `button`, `close`) for Tailwind/CSS modules users.
-3. **Component slots** — `components={{ Popover, Dots, Controls, CloseButton }}`; each receives the step + controls as props.
-4. **Headless mode** — `renderPopover={(props) => ...}` or skip the default UI entirely and build from `useTour()` + `useActiveStep()` (returns the active step's data, target rect and resolved placement).
+2. **`classNames` prop** — per-part class names (`overlay`, `ring`, `floating`, `popover`, `header`, `title`, `content`, `footer`, `progress`, `dots`, `dot`, `counter`, `button`, `primaryButton`, `close`, `arrow`) for Tailwind/CSS modules users.
+3. **Component slots** — `components={{ Popover }}` receives the step + controls as props (`PopoverProps`; `DefaultPopover` is exported to wrap or extend). *Planned:* finer slots `Dots`, `Controls`, `CloseButton`.
+4. **Headless** — build your own UI from `useTour()` + `useActiveStep()` (returns the active tour/step ids, index, total, target element and the step's resolved options).
 
-**Labels / i18n** — `labels={{ next, prev, done, close, stepCounter: (i, n) => \`${i} of ${n}\` }}` on provider.
+**Labels / i18n** — `labels={{ next, prev, done, close, stepCounter: (i, n) => \`${i} of ${n}\`, goToStep: (i) => \`Go to step ${i}\` }}` on provider (defaults exported as `DEFAULT_LABELS`).
 
 ## 8. Behaviour details
 
@@ -444,8 +451,8 @@ The tour must never get in the way of the host app. When no tour is running, it 
 
 **Rendering**
 - **Registering steps doesn't cause re-renders.** Steps register their element and props in a mutable registry (a `Map` held in a ref), not in React state. Mounting 50 `<Step>`s re-renders nothing.
-- **The app tree never re-renders when the step changes.** Tour state lives in a small external store. Only the tour's own portal UI and components that opt in through `useTour()` subscribe to it (via `useSyncExternalStore` with selectors). `<Step>` doesn't subscribe at all.
-- **Two contexts**: one for the stable `actions` (start/stop/next…, never change identity) and the store for state. A component that only calls `start()` never re-renders because of the tour.
+- **The app tree never re-renders when the step changes.** Tour state lives in a small external store. Only the tour's own portal UI and components that opt in through `useTour()` / `useActiveStep()` subscribe to it (via `useSyncExternalStore`). `<Step>` doesn't subscribe at all.
+- **One stable context + an external store.** The context value (the controller) never changes identity; state lives in the store. `useTourActions()` reads only the stable actions, so a component that only calls `start()` never re-renders because of the tour.
 - **Step content is read lazily.** It's only rendered when that step becomes active.
 
 **Listeners & work**
@@ -454,16 +461,16 @@ The tour must never get in the way of the host app. When no tour is running, it 
 - `localStorage` is read once per tour on provider mount, then cached in memory.
 
 **Bundle**
-- Budget: **≤ 8 KB min+gzip** for the library, excluding `@floating-ui/dom`. This is checked in CI with `size-limit`.
+- Budget: **≤ 8 KB min+gzip** for the library, excluding `@floating-ui/dom`. Currently ~8.2 KB (esbuild minify + gzip), slightly over. *Planned:* enforce with `size-limit` in CI.
 - Use `@floating-ui/dom` (smaller) instead of `@floating-ui/react`.
 - Tree-shakeable ESM. `sideEffects` is limited to the CSS file. No other runtime deps.
-- The default popover UI can be lazy-loaded on first `start()` (opt-in `lazyUI` prop), so the initial bundle only contains the provider and `<Step>`.
+- *Planned:* lazy-load the default popover UI on first `start()` (opt-in `lazyUI` prop), so the initial bundle only contains the provider and `<Step>`.
 - CSS: one small file. All classes are prefixed `gt-`, with no global resets or element selectors.
 
 ## 10. Accessibility
 
 - Popover: `role="dialog"`, `aria-modal="true"`, `aria-labelledby` (title) and `aria-describedby` (content).
-- Focus moves to the popover on each step; focus is trapped within popover (+ target when `interactive`); restored to the previously focused element on exit.
+- Focus moves to the popover on each step; Tab is trapped within the popover (not on `interactive` steps, which also drop `aria-modal`); restored to the previously focused element on exit.
 - Step counter announced via `aria-live="polite"`.
 - Close and nav buttons have accessible labels; all controls reachable by Tab.
 - Visible focus rings; meets WCAG AA contrast with default theme.
@@ -492,27 +499,27 @@ Vite + React + TS at the repo root (`src/`, `index.html`). Fake data, no backend
 
 ## 12. Testing
 
-- **Unit** (Vitest + React Testing Library): step navigation, storage read/write/reset, autoStart rules, duplicate-id warning, keyboard handling (incl. hold-Esc timing with fake timers), missing-target strategies.
+- **Unit** (Vitest + React Testing Library): step navigation, storage read/write/reset, autoStart rules, duplicate-id warning, keyboard handling (incl. hold-Esc timing with fake timers), missing-target strategies, hooks throwing outside `<TourProvider>`.
 - **Footprint** (§9): idle provider adds 0 DOM nodes; `<Step>` adds 0 DOM nodes; mounting steps and advancing the tour causes 0 re-renders of sibling/app components (React Profiler assertions); `size-limit` budget in CI.
 - **E2E** (Playwright against the sample app): first visit shows tour, reload doesn't, reset shows it again, Esc-hold exits, positioning snapshots at a few viewport sizes.
 - **a11y**: `axe` checks in E2E.
 
 ## 13. Milestones
 
-1. ✅ **M0 — Scaffold**: monorepo, library package, sample dashboard (static UI, fake data).
+1. ✅ **M0 — Scaffold**: library in `libs/guided-tour`, sample dashboard at the repo root (static UI, fake data).
 2. ✅ **M1 — Core**: provider, `defineTour`, `useTour`, default popover + overlay, next/prev/close, counter + dots, localStorage persistence, autoStart.
 3. ✅ **M2 — Polish**: hold-Esc, arrow keys, focus management, scroll/resize handling, missing-target strategies, animations, overlay/highlight options.
 4. 🟡 **M3 — Customization**: CSS vars, `classNames`, `components.Popover` slot, `useActiveStep`, labels are done. Still to do: `lazyUI`, finer slots (`Dots`, `Controls`, `CloseButton`), and ad-hoc `order`-based tours.
-5. 🟡 **M4 — Hardening**: 18 unit tests (incl. footprint + StrictMode). Bundle is 7.7 KB min+gzip (excluding floating-ui). Still to do: Playwright E2E in CI, axe a11y pass, `size-limit` in CI, publish config.
+5. 🟡 **M4 — Hardening**: 21 unit tests (incl. footprint, StrictMode and compile-time type checks). Bundle is ~8.2 KB min+gzip (excluding floating-ui), just over budget. Still to do: Playwright E2E in CI, axe a11y pass, `size-limit` in CI, publish config.
 
 ## 14. Open questions
 
 1. **Esc behaviour** — hold-to-exit by default, or plain tap? Should tap-Esc do anything (e.g. nothing, or same as X)?
 2. **Dismissed vs completed** — should a dismissed tour resume where it left off next time, or stay suppressed forever like now?
 3. **Progress indicator default** — counter ("3 of 7"), dots, or both?
-4. **Imperative API outside React** — do we want a `tourStore.start('id')` usable from non-component code (e.g. after an API call), or is the hook enough?
+4. **Imperative API outside React** — do we want a `tourStore.start(tour)` usable from non-component code (e.g. after an API call), or is the hook enough?
 5. **Styling approach** — ship plain CSS + variables (proposed), or go unstyled-by-default?
 6. ~~**Overlay**~~: resolved. There are separate `overlay` (dim) and `highlight` (ring) options per tour and per step.
 7. **Package name** — `guided-tour`? Something else?
-8. **Naming** — `<Step>` (proposed) vs `<TourStep>` / `<Guide>` / `<Anchor>` for the bound component? And should the hook be `useTourSteps(tour)` or just `useTour(tour)` (one hook that also exposes `start`/`stop`)?
+8. ~~**Naming**~~: resolved. `<Step>` from `useTourSteps(tour)` for steps; `useTourActions()` for actions and `useTour()` for actions + state, kept separate so placing steps never subscribes to state.
 9. **Ad-hoc ordering** — do we need tours without a step list (ordered by an `order` number, §4.4), or is requiring the list in the definition fine?
