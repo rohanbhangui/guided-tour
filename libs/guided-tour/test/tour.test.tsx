@@ -6,6 +6,7 @@ import {
   defineTour,
   memoryStorage,
   useTour,
+  useTourActions,
   useTourStep,
   useTourSteps,
   type TourActions,
@@ -403,6 +404,142 @@ describe('width', () => {
   });
 });
 
+describe('action steps (advanceOn)', () => {
+  const actionTour = defineTour({
+    id: 'action',
+    autoStart: true,
+    waitTimeout: 0,
+    progress: 'dots',
+    steps: [{ id: 'intro', content: 'Intro' }, 'press', 'form', { id: 'end', content: 'End' }],
+  });
+
+  function ActionSteps({ onPressed }: { onPressed?: () => void }) {
+    const { Step } = useTourSteps(actionTour);
+    return (
+      <main>
+        <Step id="press" advanceOn="click" content="Click the button">
+          <div>
+            <button onClick={onPressed}>Press me</button>
+          </div>
+        </Step>
+        <Step id="form" advanceOn="manual" content="Submit the form">
+          <form data-testid="form" />
+        </Step>
+      </main>
+    );
+  }
+
+  let api!: ReturnType<typeof useTour>;
+  function Grab() {
+    api = useTour();
+    return null;
+  }
+
+  const next = () => screen.getByText('Next') as HTMLButtonElement;
+  const toPress = async () => {
+    setup({ tours: [actionTour], children: (<><Grab /><ActionSteps onPressed={pressed} /></>) });
+    await tick();
+    fireEvent.click(next());
+    await tick();
+    expect(screen.getByText('Click the button')).toBeTruthy();
+  };
+  let pressed = vi.fn();
+  beforeEach(() => {
+    pressed = vi.fn();
+  });
+
+  it("'click': Next is disabled, keys don't advance, clicking inside the target does (after the app's handler)", async () => {
+    await toPress();
+    expect(next().disabled).toBe(true);
+    fireEvent.click(next());
+    fireEvent.keyDown(document, { key: 'ArrowRight' });
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Enter' });
+    await tick();
+    expect(screen.getByText('Click the button')).toBeTruthy();
+
+    fireEvent.click(screen.getByText('Press me'));
+    expect(pressed).toHaveBeenCalledTimes(1);
+    await tick();
+    expect(screen.getByText('Submit the form')).toBeTruthy();
+  });
+
+  it("'manual': only advance(tour, currentStep) moves on; Back still works", async () => {
+    await toPress();
+    fireEvent.click(screen.getByText('Press me'));
+    await tick();
+    expect(next().disabled).toBe(true);
+
+    act(() => api.advance(actionTour, 'press')); // stale step: ignored
+    await tick();
+    expect(screen.getByText('Submit the form')).toBeTruthy();
+
+    act(() => api.advance(actionTour, 'form'));
+    await tick();
+    expect(screen.getByText('End')).toBeTruthy();
+
+    fireEvent.click(screen.getByText('Back'));
+    await tick();
+    expect(screen.getByText('Submit the form')).toBeTruthy();
+  });
+
+  it("dots can't jump past an action step", async () => {
+    setup({ tours: [actionTour], children: <ActionSteps /> });
+    await tick();
+    const dots = () => [...document.querySelectorAll<HTMLButtonElement>('.gt-dot')];
+    expect(dots().map((d) => d.disabled)).toEqual([false, false, true, true]);
+    fireEvent.click(dots()[3]!);
+    await tick();
+    expect(screen.getByText('Intro')).toBeTruthy();
+
+    fireEvent.click(dots()[1]!);
+    await tick();
+    expect(screen.getByText('Click the button')).toBeTruthy();
+    expect(dots().map((d) => d.disabled)).toEqual([false, false, true, true]);
+  });
+
+  it("'click' with no target falls back to Next", async () => {
+    const tour = defineTour({
+      id: 'fallback',
+      autoStart: true,
+      steps: [{ id: 'only', content: 'No target', advanceOn: 'click' }],
+    });
+    setup({ tours: [tour], children: <div /> });
+    await tick();
+    expect((screen.getByText('Done') as HTMLButtonElement).disabled).toBe(false);
+    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining("advanceOn: 'click'"));
+  });
+});
+
+describe('several tours', () => {
+  it('runs due auto-start tours one at a time, in order', async () => {
+    const first = defineTour({ id: 'first', autoStart: true, steps: [{ id: 'a', content: 'First tour' }] });
+    const second = defineTour({ id: 'second', autoStart: true, steps: [{ id: 'b', content: 'Second tour' }] });
+    setup({ tours: [first, second], children: <div /> });
+    await tick();
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    expect(screen.getByText('First tour')).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText('Close tour'));
+    await tick();
+    expect(screen.getByText('Second tour')).toBeTruthy();
+
+    fireEvent.click(screen.getByText('Done'));
+    await tick();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});
+
+describe('provider', () => {
+  it('hooks throw a named error outside <TourProvider>', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    function Orphan() {
+      useTourActions();
+      return null;
+    }
+    expect(() => render(<Orphan />)).toThrow('[guided-tour] useTourActions must be used inside <TourProvider>.');
+  });
+});
+
 describe('types', () => {
   it('step ids are checked against the tour', () => {
     function Typed() {
@@ -440,6 +577,9 @@ describe('types', () => {
       api.reset('basic');
       // @ts-expect-error — tours are passed as objects, not id strings
       api.hasSeen('basic');
+      api.advance(basicTour, 'alpha');
+      // @ts-expect-error — not a step of this tour
+      api.advance(basicTour, 'alpah');
     };
     expect(typed).toBeTypeOf('function');
   });

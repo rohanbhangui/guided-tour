@@ -36,6 +36,16 @@ start(introTour);
 reset(introTour);
 ```
 
+### Action steps
+
+A step can wait for the user to act instead of pressing Next. The Next button shows but stays disabled until then.
+
+```tsx
+<Step id="filters" advanceOn="click" content="Click a filter to continue.">…</Step>   // clicking the target advances
+<Step id="save" advanceOn="manual" content="Save your settings.">…</Step>            // your code advances it:
+advance(settingsTour, 'save');                                                        // no-op unless that step is showing
+```
+
 ## Scripts
 
 ```sh

@@ -3,6 +3,7 @@ import { useEffect, useId, useLayoutEffect, useReducer, useRef, useState, type C
 import type { TourController } from '../controller';
 import type { UIConfig } from '../context';
 import { computeFloatingPosition, normalizePlacement, spotlightPath } from '../position';
+import { warn } from '../dev';
 import { registryKey, type TourState } from '../store';
 import type { PopoverProps, Side, TourLabels } from '../types';
 import { DefaultPopover, cx } from './Popover';
@@ -73,7 +74,8 @@ export function TourLayer({ controller, ui, state }: TourLayerProps) {
   const spotlight = !!target && step.spotlight !== false;
   const padding = step.spotlightPadding ?? 8;
   const radius = step.spotlightRadius ?? 6;
-  const interactive = !!step.interactive;
+  const advanceOn = controller.activeAdvanceOn();
+  const interactive = advanceOn === 'click' || (step.interactive ?? advanceOn === 'manual');
   const width = step.width ?? opts.width;
   const widthCss = typeof width === 'number' ? `${width}px` : width;
 
@@ -173,10 +175,29 @@ export function TourLayer({ controller, ui, state }: TourLayerProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stepId, target]);
 
+  /* Action steps: clicking the target advances. */
+  useEffect(() => {
+    if (step.advanceOn === 'click' && !target) {
+      warn(`Step "${stepId}" uses advanceOn: 'click' but has no target; falling back to the Next button.`);
+    }
+    if (advanceOn !== 'click' || !target) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // Deferred so the app's own click handler (React's, at the root) runs first.
+    const onClick = () => {
+      timer = setTimeout(() => controller.advanceFrom(tourId, stepId));
+    };
+    target.addEventListener('click', onClick);
+    return () => {
+      target.removeEventListener('click', onClick);
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [controller, tourId, stepId, target, advanceOn]);
+
   /* Keyboard: listeners exist only while a tour is active. */
   const [escapeHolding, setEscapeHolding] = useState(false);
-  const latest = useRef({ keyboard: opts.keyboard, interactive });
-  latest.current = { keyboard: opts.keyboard, interactive };
+  const latest = useRef({ keyboard: opts.keyboard, interactive, advanceOn });
+  latest.current = { keyboard: opts.keyboard, interactive, advanceOn };
 
   useEffect(() => {
     let holdTimer: ReturnType<typeof setTimeout> | undefined;
@@ -188,7 +209,7 @@ export function TourLayer({ controller, ui, state }: TourLayerProps) {
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
-      const { keyboard: kb, interactive } = latest.current;
+      const { keyboard: kb, interactive, advanceOn } = latest.current;
       if (!kb.enabled) return;
       switch (e.key) {
         case 'Escape':
@@ -209,9 +230,10 @@ export function TourLayer({ controller, ui, state }: TourLayerProps) {
         case 'ArrowLeft':
           if (!kb.arrows || isEditable(e.target)) return;
           e.preventDefault();
-          return e.key === 'ArrowRight' ? controller.next() : controller.prev();
+          if (e.key === 'ArrowLeft') return controller.prev();
+          return advanceOn === 'next' && controller.next();
         case 'Enter':
-          if (kb.arrows && e.target === floatingRef.current) {
+          if (kb.arrows && advanceOn === 'next' && e.target === floatingRef.current) {
             e.preventDefault();
             controller.next();
           }
@@ -255,11 +277,13 @@ export function TourLayer({ controller, ui, state }: TourLayerProps) {
     classNames,
     titleId,
     contentId,
+    advanceOn,
+    canGoTo: (i) => controller.canGoTo(i),
     escapeHolding,
     escapeHoldMs: opts.keyboard.escapeHoldMs,
-    next: controller.actions.next,
+    next: () => advanceOn === 'next' && controller.next(),
     prev: controller.actions.prev,
-    goTo: controller.actions.goTo,
+    goTo: (i) => controller.canGoTo(i) && controller.goTo(i),
     close: () => controller.stop(),
   };
 

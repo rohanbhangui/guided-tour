@@ -32,7 +32,7 @@ const DOT_GAP = 6;
  * Carousel-style dots: past `maxDots`, show a sliding window around the current step.
  * Edge dots shrink when more steps exist beyond them.
  */
-function Dots({ stepIndex, totalSteps, maxDots, labels, classNames, goTo }: PopoverProps) {
+function Dots({ stepIndex, totalSteps, maxDots, labels, classNames, goTo, canGoTo }: PopoverProps) {
   const visible = Math.max(3, Math.min(maxDots, totalSteps));
   const start = Math.min(Math.max(stepIndex - Math.floor(visible / 2), 0), totalSteps - visible);
   const end = start + visible - 1;
@@ -59,6 +59,7 @@ function Dots({ stepIndex, totalSteps, maxDots, labels, classNames, goTo }: Popo
               aria-hidden={size === 'hidden' || undefined}
               aria-label={labels.goToStep(i + 1)}
               aria-current={i === stepIndex ? 'step' : undefined}
+              disabled={!canGoTo(i)}
               onClick={() => goTo(i)}
             />
           );
@@ -86,7 +87,7 @@ function Progress(props: PopoverProps) {
 }
 
 export function DefaultPopover(props: PopoverProps) {
-  const { title, content, classNames, showClose, showPrev, isFirst, prev, next, prevLabel, nextLabel, titleId, contentId } =
+  const { title, content, classNames, showClose, showPrev, isFirst, prev, next, prevLabel, nextLabel, titleId, contentId, advanceOn } =
     props;
   return (
     <div className={cx('gt-popover', classNames.popover)}>
@@ -116,6 +117,7 @@ export function DefaultPopover(props: PopoverProps) {
           <button
             type="button"
             className={cx('gt-button', 'gt-button--primary', classNames.button, classNames.primaryButton)}
+            disabled={advanceOn !== 'next'}
             onClick={next}
           >
             {nextLabel}

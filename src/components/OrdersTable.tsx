@@ -110,13 +110,8 @@ export function OrdersTable() {
         <Step
           id="orders-filters"
           title="Try a filter"
-          content={
-            <>
-              This step is <em>interactive</em>: click a status chip right now. Showing <strong>{filter}</strong> ·{' '}
-              {rows.length} orders.
-            </>
-          }
-          interactive
+          content="Click a status chip to filter the table. The tour continues once you do."
+          advanceOn="click"
           placement={{ side: 'bottom', align: 'start', offset: 14 }}
         >
           <div className="chips" role="group" aria-label="Filter by status">

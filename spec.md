@@ -202,7 +202,8 @@ interface StepOptions {
   width?: number | string;         // per-step popover width override
   spotlightPadding?: number;       // px around target, default 8
   spotlightRadius?: number;        // px, default 6
-  interactive?: boolean;           // can the user click the highlighted element? default false
+  interactive?: boolean;           // can the user click the highlighted element? default false ('click'/'manual' steps: true)
+  advanceOn?: 'next' | 'click' | 'manual'; // how the user moves past this step; default 'next' (see below)
   scrollIntoView?: boolean | ScrollIntoViewOptions; // default true
   showPrev?: boolean;              // per-step overrides of tour-level UI flags
   showClose?: boolean;
@@ -212,6 +213,32 @@ interface StepOptions {
   onAfterShow?: (ctx: StepContext) => void;
 }
 ```
+
+**Action steps (`advanceOn`).** Some steps should only move on once the user *does* something ("click a filter to continue"). This is a per-step option, not a separate kind of tour, so one tour can mix normal and action steps freely.
+
+| `advanceOn` | Moves on when | Next button / → / Enter | Target clickable |
+|---|---|---|---|
+| `'next'` (default) | the user presses Next | yes | only if `interactive` |
+| `'click'` | the user clicks the target (or anything inside it) | disabled / ignored | always |
+| `'manual'` | your code calls `advance(tour, stepId)` (§4.9), e.g. after a form submits or a filter applies | disabled / ignored | yes, unless `interactive: false` |
+
+```tsx
+<Step id="orders-filters" advanceOn="click" content="Click a status chip to filter the table.">
+  <FilterChips />
+</Step>
+
+// 'manual': advance only when the thing actually happened
+const { advance } = useTourActions();
+const onSaved = () => advance(settingsTour, 'settings-save'); // no-op unless that step is the one showing
+```
+
+- **The step can't be skipped from the tour UI.** Next is shown but disabled (so it's clear an action is expected), → / Enter do nothing, and the progress dots can't jump past it. Back, close and hold-Esc still work, so the user is never trapped.
+- **Programmatic calls still work.** `next()` / `goTo()` from your code aren't blocked; the rule is about the tour's own UI.
+- **`'click'` advances after your click handler runs**, so the next step sees the updated app state (e.g. the drawer the click opened).
+- **`'click'` with no target** (missing, or `missingTarget: 'center'`) falls back to `'next'` with a dev warning, so the tour can't get stuck.
+- **`'manual'` with the action outside the target**: the overlay blocks clicks outside the spotlight, so set `overlay: false` on that step.
+- The popover should say what to do ("Click a status chip…"), since the disabled Next button alone doesn't.
+- Dots can only skip ahead to steps they know are action steps: config entries, and inline steps that are mounted or have been mounted. To be certain, also put `advanceOn` on the step's entry in the tour definition: `{ id: 'orders-filters', advanceOn: 'click' }`.
 
 ### 4.6 Positioning
 
@@ -320,7 +347,8 @@ import 'guided-tour/styles.css';
 ```
 
 - Registers tours; warns in dev on **duplicate `id`s** (keys must be unique).
-- Handles `autoStart` tours on mount: starts the first registered auto-start tour whose storage entry is absent. Only **one tour runs at a time**; additional auto-starts queue.
+- Handles `autoStart` tours on mount: starts the first registered auto-start tour whose storage entry is absent. **Only one tour runs at a time.** If several auto-start tours are due, they run one after another in `tours` order: the next starts when the current one completes or is dismissed (after its own `autoStartDelay`).
+- A manual `start(tour)` while another tour is running ends the running one without recording it, so an auto-start tour interrupted this way shows again on the next load.
 - Renders the overlay/popover into a portal on `document.body` (or `portalContainer`).
 - SSR-safe: no `window`/`localStorage` access during render.
 - **Required.** Every hook (`useTour`, `useTourActions`, `useActiveStep`, `useTourSteps`) and every `<Step>` must be rendered inside a `<TourProvider>`. Used outside one, it throws on first render, in dev and production: `[guided-tour] useTourActions must be used inside <TourProvider>.` (the message names the hook). This can't be a TypeScript error: whether a provider sits above a component depends on where it's rendered at runtime, not on its types.
@@ -341,6 +369,7 @@ tour.stop();                                   // end the active tour now, mark 
 tour.reset(dashboardTour);                     // clear its storage entry so it shows again
 tour.reset();                                  // clear all registered tours
 tour.reset(dashboardTour, { restart: true });  // clear + start immediately
+tour.advance(dashboardTour, 'kpis');           // next(), but only if that step is the one showing (for advanceOn: 'manual')
 
 tour.activeTourId;    // string | null
 tour.stepIndex;       // number
@@ -423,7 +452,7 @@ Rationale for hold-Esc default: a single Esc tap is easy to hit accidentally (e.
 **Customization layers** (from lightest to heaviest):
 1. **CSS variables** — `--gt-accent`, `--gt-radius`, `--gt-overlay-color`, `--gt-z-index`, `--gt-popover-width`, etc. Light/dark aware.
 2. **`classNames` prop** — per-part class names (`overlay`, `ring`, `floating`, `popover`, `header`, `title`, `content`, `footer`, `progress`, `dots`, `dot`, `counter`, `button`, `primaryButton`, `close`, `arrow`) for Tailwind/CSS modules users.
-3. **Component slots** — `components={{ Popover }}` receives the step + controls as props (`PopoverProps`; `DefaultPopover` is exported to wrap or extend). *Planned:* finer slots `Dots`, `Controls`, `CloseButton`.
+3. **Component slots** — `components={{ Popover }}` receives the step + controls as props (`PopoverProps`; `DefaultPopover` is exported to wrap or extend). Props include `advanceOn` (disable your Next button unless it's `'next'`) and `canGoTo(index)` (disable dots the user can't jump to; `goTo` already ignores them). *Planned:* finer slots `Dots`, `Controls`, `CloseButton`.
 4. **Headless** — build your own UI from `useTour()` + `useActiveStep()` (returns the active tour/step ids, index, total, target element and the step's resolved options).
 
 **Labels / i18n** — `labels={{ next, prev, done, close, stepCounter: (i, n) => \`${i} of ${n}\`, goToStep: (i) => \`Go to step ${i}\` }}` on provider (defaults exported as `DEFAULT_LABELS`).
@@ -461,7 +490,7 @@ The tour must never get in the way of the host app. When no tour is running, it 
 - `localStorage` is read once per tour on provider mount, then cached in memory.
 
 **Bundle**
-- Budget: **≤ 8 KB min+gzip** for the library, excluding `@floating-ui/dom`. Currently ~8.2 KB (esbuild minify + gzip), slightly over. *Planned:* enforce with `size-limit` in CI.
+- Budget: **≤ 8 KB min+gzip** for the library, excluding `@floating-ui/dom`. Currently ~8.6 KB (esbuild minify + gzip), slightly over. *Planned:* enforce with `size-limit` in CI.
 - Use `@floating-ui/dom` (smaller) instead of `@floating-ui/react`.
 - Tree-shakeable ESM. `sideEffects` is limited to the CSS file. No other runtime deps.
 - *Planned:* lazy-load the default popover UI on first `start()` (opt-in `lazyUI` prop), so the initial bundle only contains the provider and `<Step>`.
@@ -490,7 +519,7 @@ Vite + React + TS at the repo root (`src/`, `index.html`). Fake data, no backend
 
 **Tours to build**
 1. `dashboard-intro` — auto-start, ~7 steps across sidebar → KPIs → chart → table → help menu, ends with a centered step.
-2. `orders-table` — manual, started from a "?" button on the table; includes an `interactive` step ("try a filter").
+2. `orders-table` — manual, started from a "?" button on the table; includes an action step (`advanceOn: 'click'`, "click a status chip to continue").
 3. `settings` — manual; first step opens the drawer via `onBeforeShow`.
 
 **Dev panel** (bottom-left, dev only): shows current storage entries, buttons for `start`/`stop`/`reset` per tour, toggle for Esc mode. Doubles as our manual test harness.
@@ -499,7 +528,7 @@ Vite + React + TS at the repo root (`src/`, `index.html`). Fake data, no backend
 
 ## 12. Testing
 
-- **Unit** (Vitest + React Testing Library): step navigation, storage read/write/reset, autoStart rules, duplicate-id warning, keyboard handling (incl. hold-Esc timing with fake timers), missing-target strategies, hooks throwing outside `<TourProvider>`.
+- **Unit** (Vitest + React Testing Library): step navigation, storage read/write/reset, autoStart rules, duplicate-id warning, keyboard handling (incl. hold-Esc timing with fake timers), missing-target strategies, action steps (`advanceOn`), auto-start queueing, hooks throwing outside `<TourProvider>`.
 - **Footprint** (§9): idle provider adds 0 DOM nodes; `<Step>` adds 0 DOM nodes; mounting steps and advancing the tour causes 0 re-renders of sibling/app components (React Profiler assertions); `size-limit` budget in CI.
 - **E2E** (Playwright against the sample app): first visit shows tour, reload doesn't, reset shows it again, Esc-hold exits, positioning snapshots at a few viewport sizes.
 - **a11y**: `axe` checks in E2E.
@@ -510,7 +539,7 @@ Vite + React + TS at the repo root (`src/`, `index.html`). Fake data, no backend
 2. ✅ **M1 — Core**: provider, `defineTour`, `useTour`, default popover + overlay, next/prev/close, counter + dots, localStorage persistence, autoStart.
 3. ✅ **M2 — Polish**: hold-Esc, arrow keys, focus management, scroll/resize handling, missing-target strategies, animations, overlay/highlight options.
 4. 🟡 **M3 — Customization**: CSS vars, `classNames`, `components.Popover` slot, `useActiveStep`, labels are done. Still to do: `lazyUI`, finer slots (`Dots`, `Controls`, `CloseButton`), and ad-hoc `order`-based tours.
-5. 🟡 **M4 — Hardening**: 21 unit tests (incl. footprint, StrictMode and compile-time type checks). Bundle is ~8.2 KB min+gzip (excluding floating-ui), just over budget. Still to do: Playwright E2E in CI, axe a11y pass, `size-limit` in CI, publish config.
+5. 🟡 **M4 — Hardening**: 27 unit tests (incl. footprint, StrictMode, action steps, tour queueing and compile-time type checks). Bundle is ~8.6 KB min+gzip (excluding floating-ui), just over budget. Still to do: Playwright E2E in CI, axe a11y pass, `size-limit` in CI, publish config.
 
 ## 14. Open questions
 

@@ -210,6 +210,7 @@
 .gt-dot[data-size='md'] { transform: scale(0.75); }
 .gt-dot[data-size='sm'] { transform: scale(0.5); }
 .gt-dot[data-size='hidden'] { transform: scale(0); opacity: 0; pointer-events: none; }
+.gt-dot:disabled { cursor: default; }
 .gt-dot[aria-current='step'] {
   width: 20px;
   opacity: 1;
@@ -241,6 +242,10 @@
   color: var(--gt-accent-fg);
 }
 .gt-button--primary:hover { background: var(--gt-accent); filter: brightness(1.08); }
+/* Action steps (advanceOn: 'click' | 'manual'): Next waits for the user to act. */
+.gt-button:disabled { opacity: 0.45; cursor: not-allowed; }
+.gt-button:disabled:hover { background: transparent; filter: none; }
+.gt-button--primary:disabled:hover { background: var(--gt-accent); }
 
 .gt-button:focus-visible,
 .gt-dot:focus-visible,

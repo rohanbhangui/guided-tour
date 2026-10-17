@@ -47,6 +47,8 @@ export type StepTarget =
   | RefObject<HTMLElement | null>
   | (() => HTMLElement | null);
 
+export type AdvanceOn = 'next' | 'click' | 'manual';
+
 export interface StepContext {
   tourId: string;
   stepId: string;
@@ -71,8 +73,15 @@ export interface StepOptions {
   spotlightPadding?: number;
   /** px. Default 6. */
   spotlightRadius?: number;
-  /** Allow clicking the highlighted element. Default false. */
+  /** Allow clicking the highlighted element. Default false (true for `'click'` / `'manual'` steps). */
   interactive?: boolean;
+  /**
+   * How the user moves past this step. Default 'next'.
+   * - 'next': the Next button, → or Enter.
+   * - 'click': clicking the target (or anything inside it). Next is disabled.
+   * - 'manual': your code calls `advance(tour, stepId)`. Next is disabled.
+   */
+  advanceOn?: AdvanceOn;
   /** Default true. */
   scrollIntoView?: boolean | ScrollIntoViewOptions;
   showPrev?: boolean;
@@ -231,6 +240,10 @@ export interface PopoverProps {
   /** Ids to wire up `aria-labelledby` / `aria-describedby`. */
   titleId: string;
   contentId: string;
+  /** Anything but 'next' means the user must act: disable your Next button. */
+  advanceOn: AdvanceOn;
+  /** Whether `goTo(index)` is allowed (it can't skip past an action step). Use it to disable dots. */
+  canGoTo: (index: number) => boolean;
   /** True while Escape is being held down. */
   escapeHolding: boolean;
   escapeHoldMs: number;

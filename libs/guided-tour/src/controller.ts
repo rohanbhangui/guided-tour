@@ -1,6 +1,7 @@
 import { warn } from './dev';
 import { StepRegistry, createStore, idleState, registryKey, type TourState } from './store';
 import type {
+  AdvanceOn,
   ConfigStep,
   KeyboardOptions,
   StepContext,
@@ -63,6 +64,8 @@ export interface TourActions {
   next(): void;
   prev(): void;
   goTo(step: number | string): void;
+  /** `next()`, but only if `step` of `tour` is the step showing. Use it to finish `advanceOn: 'manual'` steps. */
+  advance<T extends TourDefinition<any>>(tour: T, step: StepIdOf<T>): void; // eslint-disable-line @typescript-eslint/no-explicit-any
   hasSeen(tour: TourDefinition<any>): boolean; // eslint-disable-line @typescript-eslint/no-explicit-any
 }
 
@@ -129,6 +132,7 @@ export class TourController {
       next: () => this.next(),
       prev: () => this.prev(),
       goTo: (s) => this.goTo(s),
+      advance: (tour, step) => this.advanceFrom(tour.id, step),
       hasSeen: (tour) => this.hasSeen(tour.id),
     };
   }
@@ -246,6 +250,33 @@ export class TourController {
     if (!this.activeTour) return;
     const index = this.indexOf(this.activeTour, step);
     void this.show(index, index >= this.store.get().stepIndex ? 1 : -1);
+  }
+
+  /** Advance only if this exact step is showing, so a stale or unrelated call can't skip a step. */
+  advanceFrom(tourId: string, stepId: string) {
+    const s = this.store.get();
+    if (s.status === 'active' && s.tourId === tourId && s.stepId === stepId) this.next();
+  }
+
+  /** How the active step advances. A 'click' step with no target falls back to 'next' so it can't get stuck. */
+  activeAdvanceOn(): AdvanceOn {
+    const s = this.store.get();
+    if (s.status !== 'active' || !s.tourId || !s.stepId) return 'next';
+    const declared = this.getStepOptions(s.tourId, s.stepId).advanceOn ?? 'next';
+    return declared === 'click' && !s.target ? 'next' : declared;
+  }
+
+  /** Tour UI navigation (dots) can't jump past an action step the user hasn't done. */
+  canGoTo(index: number) {
+    const s = this.store.get();
+    const tour = this.activeTour;
+    if (!tour || s.status !== 'active' || index < 0 || index >= tour.steps.length) return false;
+    if (index <= s.stepIndex) return true;
+    if (this.activeAdvanceOn() !== 'next') return false;
+    for (let i = s.stepIndex + 1; i < index; i++) {
+      if ((this.getStepOptions(tour.id, stepIdOf(tour.steps[i]!)).advanceOn ?? 'next') !== 'next') return false;
+    }
+    return true;
   }
 
   /* ------------------------------- internals ------------------------------- */
