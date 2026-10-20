@@ -497,6 +497,25 @@ describe('action steps (advanceOn)', () => {
     expect(dots().map((d) => d.disabled)).toEqual([false, false, true, true]);
   });
 
+  it("'click' still advances when the click unmounts the target", async () => {
+    const tour = defineTour({ id: 'unmount', autoStart: true, steps: ['save'] });
+    function Drawer() {
+      const [open, setOpen] = useState(true);
+      const { Step } = useTourSteps(tour);
+      return open ? (
+        <Step id="save" advanceOn="click" content="Click save">
+          <button onClick={() => setOpen(false)}>Save</button>
+        </Step>
+      ) : null;
+    }
+    const { storage } = setup({ tours: [tour], children: <Drawer /> });
+    await tick();
+    fireEvent.click(screen.getByText('Save'));
+    await tick();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(storage.get('unmount:v1')).toMatchObject({ status: 'completed' });
+  });
+
   it("'click' with no target falls back to Next", async () => {
     const tour = defineTour({
       id: 'fallback',

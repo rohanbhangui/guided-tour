@@ -181,16 +181,17 @@ export function TourLayer({ controller, ui, state }: TourLayerProps) {
       warn(`Step "${stepId}" uses advanceOn: 'click' but has no target; falling back to the Next button.`);
     }
     if (advanceOn !== 'click' || !target) return;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    // Deferred so the app's own click handler (React's, at the root) runs first.
+    let fired = false;
+    // Deferred so the app's own click handler (React's, at the root) runs first. Not cancelled on
+    // cleanup: the click may unmount the target (e.g. Save closes a drawer), and advanceFrom
+    // already ignores it if the step changed meanwhile. `fired` dedupes label → input double clicks.
     const onClick = () => {
-      timer = setTimeout(() => controller.advanceFrom(tourId, stepId));
+      if (fired) return;
+      fired = true;
+      setTimeout(() => controller.advanceFrom(tourId, stepId));
     };
     target.addEventListener('click', onClick);
-    return () => {
-      target.removeEventListener('click', onClick);
-      clearTimeout(timer);
-    };
+    return () => target.removeEventListener('click', onClick);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [controller, tourId, stepId, target, advanceOn]);
 

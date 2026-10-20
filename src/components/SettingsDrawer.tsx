@@ -37,8 +37,9 @@ export function SettingsDrawer({ open, onClose, theme, onTheme }: SettingsDrawer
         <Step
           id="settings-theme"
           title="Appearance"
-          content="Pick light, dark, or follow your system. The tour itself follows the system theme too."
+          content="Pick light, dark, or follow your system to continue. The tour itself follows the theme too."
           placement="left"
+          advanceOn="click"
         >
           <fieldset className="field">
             <legend>Theme</legend>
@@ -55,8 +56,9 @@ export function SettingsDrawer({ open, onClose, theme, onTheme }: SettingsDrawer
         <Step
           id="settings-notifications"
           title="Email notifications"
-          content="Choose which events land in your inbox."
+          content="Choose which events land in your inbox. Tick or untick one to continue."
           placement="left"
+          advanceOn="click"
         >
           <fieldset className="field">
             <legend>Email me about</legend>
@@ -70,7 +72,7 @@ export function SettingsDrawer({ open, onClose, theme, onTheme }: SettingsDrawer
         </Step>
 
         <div className="drawer-foot">
-          <Step id="settings-save" title="Save" content="Changes apply as soon as you save." placement="top-end">
+          <Step id="settings-save" title="Save" content="Click Save to apply your changes and finish." placement="top-end" advanceOn="click">
             <button className="button primary" onClick={onClose}>
               Save changes
             </button>

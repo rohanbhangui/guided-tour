@@ -44,6 +44,7 @@ export const ordersTour = defineTour({
   steps: ['orders-search', 'orders-filters', 'orders-sort', 'orders-actions', 'orders-pagination'],
 });
 
+/** A click-through tour: every step waits for the user to do the thing (advanceOn: 'click'). */
 export const settingsTour = defineTour({
   id: 'settings',
   progress: 'counter',

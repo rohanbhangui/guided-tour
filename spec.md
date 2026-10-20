@@ -520,7 +520,7 @@ Vite + React + TS at the repo root (`src/`, `index.html`). Fake data, no backend
 **Tours to build**
 1. `dashboard-intro` — auto-start, ~7 steps across sidebar → KPIs → chart → table → help menu, ends with a centered step.
 2. `orders-table` — manual, started from a "?" button on the table; includes an action step (`advanceOn: 'click'`, "click a status chip to continue").
-3. `settings` — manual; first step opens the drawer via `onBeforeShow`.
+3. `settings` — manual, and fully click-driven: every step is `advanceOn: 'click'` (pick a theme → toggle an email → click Save, which closes the drawer and completes the tour). The first step opens the drawer via `onBeforeShow`.
 
 **Dev panel** (bottom-left, dev only): shows current storage entries, buttons for `start`/`stop`/`reset` per tour, toggle for Esc mode. Doubles as our manual test harness.
 
@@ -539,7 +539,7 @@ Vite + React + TS at the repo root (`src/`, `index.html`). Fake data, no backend
 2. ✅ **M1 — Core**: provider, `defineTour`, `useTour`, default popover + overlay, next/prev/close, counter + dots, localStorage persistence, autoStart.
 3. ✅ **M2 — Polish**: hold-Esc, arrow keys, focus management, scroll/resize handling, missing-target strategies, animations, overlay/highlight options.
 4. 🟡 **M3 — Customization**: CSS vars, `classNames`, `components.Popover` slot, `useActiveStep`, labels are done. Still to do: `lazyUI`, finer slots (`Dots`, `Controls`, `CloseButton`), and ad-hoc `order`-based tours.
-5. 🟡 **M4 — Hardening**: 27 unit tests (incl. footprint, StrictMode, action steps, tour queueing and compile-time type checks). Bundle is ~8.6 KB min+gzip (excluding floating-ui), just over budget. Still to do: Playwright E2E in CI, axe a11y pass, `size-limit` in CI, publish config.
+5. 🟡 **M4 — Hardening**: 28 unit tests (incl. footprint, StrictMode, action steps, tour queueing and compile-time type checks). Bundle is ~8.6 KB min+gzip (excluding floating-ui), just over budget. Still to do: Playwright E2E in CI, axe a11y pass, `size-limit` in CI, publish config.
 
 ## 14. Open questions
 
