@@ -235,6 +235,8 @@ const onSaved = () => advance(settingsTour, 'settings-save'); // no-op unless th
 - **The step can't be skipped from the tour UI.** Next is shown but disabled (so it's clear an action is expected), → / Enter do nothing, and the progress dots can't jump past it. Back, close and hold-Esc still work, so the user is never trapped.
 - **Programmatic calls still work.** `next()` / `goTo()` from your code aren't blocked; the rule is about the tour's own UI.
 - **`'click'` advances after your click handler runs**, so the next step sees the updated app state (e.g. the drawer the click opened).
+- **A click that removes its own target still advances** (e.g. Save closes the drawer it lives in, completing the tour). **One click advances once**, even when it fires several click events (a `<label>` and its checkbox).
+- **Anything inside the target counts as the click**, including labels and padding. Wrap only the controls that should count (e.g. the buttons, not the whole fieldset).
 - **`'click'` with no target** (missing, or `missingTarget: 'center'`) falls back to `'next'` with a dev warning, so the tour can't get stuck.
 - **`'manual'` with the action outside the target**: the overlay blocks clicks outside the spotlight, so set `overlay: false` on that step.
 - The popover should say what to do ("Click a status chip…"), since the disabled Next button alone doesn't.
